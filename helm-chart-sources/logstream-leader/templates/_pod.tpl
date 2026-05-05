@@ -64,6 +64,7 @@ containers:
       subPath: {{ .subPath | default "" }}
       readOnly: {{ .readOnly }}
     {{- end }}
+    {{- include "logstream-leader.sharedStorage.volumeMounts" . | nindent 4 }}
 
     ports:
       {{-  range .Values.service.ports }}
@@ -100,6 +101,7 @@ containers:
       # Single Volume for persistence (CRIBL-3848)
       - name: CRIBL_VOLUME_DIR
         value: {{ .Values.config.criblHome }}/config-volume
+      {{- include "logstream-leader.sharedStorage.env" . | nindent 6 }}
       {{ if .Values.envValueFrom }}
       {{ toYaml .Values.envValueFrom | nindent 6  }}
       {{- end }}
@@ -221,6 +223,7 @@ volumes:
     csi: {{- toYaml .csi | nindent 6 }}
 {{- end }}
 {{- end }}
+  {{- include "logstream-leader.sharedStorage.volumes" . | nindent 2 }}
 {{- with .Values.nodeSelector }}
 nodeSelector:
   {{- toYaml . | nindent 2 }}

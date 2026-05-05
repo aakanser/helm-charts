@@ -1,0 +1,50 @@
+{{- if .Values.sharedStorage.enabled -}}
+{{- if not (empty .Values.sharedStorage.claim) -}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "logstream-workergroup.sharedStorage.claimName" . }}
+  labels:
+    {{- include "logstream-workergroup.labels" . | nindent 4 }}
+  {{- with .Values.sharedStorage.claim.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes: {{ .Values.sharedStorage.claim.accessModes | default (list "ReadWriteMany") | toYaml | nindent 4 }}
+  {{- with .Values.sharedStorage.claim.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ required "sharedStorage.claim.size is required when rendering a PVC" .Values.sharedStorage.claim.size }}
+  {{- with .Values.sharedStorage.claim.extraSpec }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}
+{{- if and .Values.sharedStorage.legacy.enabled (not (empty .Values.sharedStorage.legacy.claim)) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "logstream-workergroup.sharedStorage.legacyClaimName" . }}
+  labels:
+    {{- include "logstream-workergroup.labels" . | nindent 4 }}
+  {{- with .Values.sharedStorage.legacy.claim.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes: {{ .Values.sharedStorage.legacy.claim.accessModes | default (list "ReadWriteMany") | toYaml | nindent 4 }}
+  {{- with .Values.sharedStorage.legacy.claim.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ required "sharedStorage.legacy.claim.size is required when rendering a PVC" .Values.sharedStorage.legacy.claim.size }}
+  {{- with .Values.sharedStorage.legacy.claim.extraSpec }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}
+{{- end }}

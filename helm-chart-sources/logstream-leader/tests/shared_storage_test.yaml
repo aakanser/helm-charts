@@ -1,0 +1,249 @@
+suite: Shared Storage (PQ)
+templates:
+  - deployment.yaml
+  - shared-storage-claim.yaml
+tests:
+  - it: Does not mount or set env when disabled
+    template: deployment.yaml
+    set:
+      sharedStorage:
+        enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts[?(@.name == 'shared-storage')]
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CRIBL_WORKER_VOLUME
+          any: true
+      - notExists:
+          path: spec.template.spec.volumes[?(@.name == 'shared-storage')]
+
+  - it: Does not render the shared storage claim when no claim block is set
+    template: shared-storage-claim.yaml
+    set:
+      sharedStorage:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: Mounts an existing claim and exports CRIBL_WORKER_VOLUME
+    template: deployment.yaml
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: cribl-shared-pq
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: shared-storage
+            mountPath: /var/cribl-shared-pq
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CRIBL_WORKER_VOLUME
+            value: /var/cribl-shared-pq
+          any: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: shared-storage
+            persistentVolumeClaim:
+              claimName: cribl-shared-pq
+          any: true
+
+  - it: Honours mountPath and subPath overrides
+    template: deployment.yaml
+    set:
+      sharedStorage:
+        enabled: true
+        mountPath: /mnt/pq
+        subPath: tenant-a
+        existingClaim: cribl-shared-pq
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: shared-storage
+            mountPath: /mnt/pq
+            subPath: tenant-a
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CRIBL_WORKER_VOLUME
+            value: /mnt/pq
+          any: true
+
+  - it: Renders a shared storage PVC when claim is set
+    template: shared-storage-claim.yaml
+    release:
+      name: ls-lead
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: ""
+        claim:
+          storageClassName: efs-sc
+          size: 20Gi
+          accessModes:
+            - ReadWriteMany
+          annotations:
+            foo: bar
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: ls-lead-leader-shared-pq
+      - equal:
+          path: spec.storageClassName
+          value: efs-sc
+      - equal:
+          path: spec.resources.requests.storage
+          value: 20Gi
+      - equal:
+          path: spec.accessModes
+          value:
+            - ReadWriteMany
+      - equal:
+          path: metadata.annotations
+          value:
+            foo: bar
+
+  - it: Defaults to ReadWriteMany when accessModes are omitted
+    template: shared-storage-claim.yaml
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: ""
+        claim:
+          size: 50Gi
+    asserts:
+      - equal:
+          path: spec.accessModes
+          value:
+            - ReadWriteMany
+
+  - it: Pod references the rendered PVC by generated name
+    template: deployment.yaml
+    release:
+      name: ls-lead
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: ""
+        claim:
+          storageClassName: efs-sc
+          size: 50Gi
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: shared-storage
+            persistentVolumeClaim:
+              claimName: ls-lead-leader-shared-pq
+          any: true
+
+  - it: Accepts a raw NFS volume spec
+    template: deployment.yaml
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: ""
+        volume:
+          nfs:
+            server: nfs.example.com
+            path: /exports/cribl-pq
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: shared-storage
+            nfs:
+              server: nfs.example.com
+              path: /exports/cribl-pq
+          any: true
+
+  - it: Fails when no source is configured
+    template: deployment.yaml
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "sharedStorage: exactly one of `existingClaim`, `claim`, or `volume` must be set when enabled"
+
+  - it: Fails when more than one source is configured
+    template: deployment.yaml
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: cribl-shared-pq
+        volume:
+          nfs:
+            server: nfs.example.com
+            path: /exports/cribl-pq
+    asserts:
+      - failedTemplate:
+          errorMessage: "sharedStorage: exactly one of `existingClaim`, `claim`, or `volume` must be set when enabled"
+
+  - it: Mounts the default existingClaim out of the box
+    template: deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: shared-storage
+            mountPath: /var/cribl-shared-pq
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CRIBL_WORKER_VOLUME
+            value: /var/cribl-shared-pq
+          any: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: shared-storage
+            persistentVolumeClaim:
+              claimName: cribl-shared-pq
+          any: true
+
+  - it: Mounts a legacy volume and exports CRIBL_LEGACY_WORKER_VOLUME
+    template: deployment.yaml
+    set:
+      sharedStorage:
+        enabled: true
+        existingClaim: cribl-shared-pq
+        legacy:
+          enabled: true
+          mountPath: /var/old-pq
+          existingClaim: cribl-shared-pq-old
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: shared-storage-legacy
+            mountPath: /var/old-pq
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CRIBL_LEGACY_WORKER_VOLUME
+            value: /var/old-pq
+          any: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: shared-storage-legacy
+            persistentVolumeClaim:
+              claimName: cribl-shared-pq-old
+          any: true

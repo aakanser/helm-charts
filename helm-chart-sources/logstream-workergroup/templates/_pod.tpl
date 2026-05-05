@@ -62,6 +62,7 @@ containers:
       # Self-Signed Certs
       - name: NODE_TLS_REJECT_UNAUTHORIZED
         value: "{{ .Values.config.rejectSelfSignedCerts }}"
+      {{- include "logstream-workergroup.sharedStorage.env" . | nindent 6 }}
       {{ if .Values.envValueFrom }}
       {{ toYaml .Values.envValueFrom | nindent 6  }}
       {{- end }}
@@ -71,6 +72,7 @@ containers:
       {{- end }}
 
     volumeMounts:
+      {{- include "logstream-workergroup.sharedStorage.volumeMounts" . | nindent 6 }}
       {{- range .Values.extraConfigmapMounts }}
       - name: {{ .name }}
         mountPath: {{ .mountPath }}
@@ -157,6 +159,7 @@ volumes:
     csi: {{- toYaml .csi | nindent 6 }}
   {{- end }}
   {{- end }}
+  {{- include "logstream-workergroup.sharedStorage.volumes" . | nindent 2 }}
 
 {{- if .Values.terminationGracePeriodSeconds }}
 terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}

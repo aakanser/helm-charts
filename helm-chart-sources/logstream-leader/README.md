@@ -333,6 +333,37 @@ Once you run `helm install` with this in the `values.yaml` file, you can do `kub
 
 ...and then look at `/opt/cribl/config-volume/groups/group1/local/cribl/jobs.yml` to verify that it is in place. 
 
+# PQ Shared Storage
+
+Cribl Stream supports a **PQ Shared Storage** mode in which all worker pods _and_ the leader pod(s) read and write to the same `ReadWriteMany` volume. Each worker writes only to its own subdirectory (keyed by the worker node GUID); the leader has visibility into every worker's subdirectory, which lets it scan, clean and revive queues left behind by terminated or scaled-down workers.
+
+The chart implements this with a top-level `sharedStorage` block. Set the same backend (the same NFS export, EFS access point, Azure Files share, or RWX PVC) on every `logstream-workergroup` release that should participate.
+
+```yaml
+sharedStorage:
+  enabled: true
+  # Mount path inside the container; also exported as CRIBL_WORKER_VOLUME.
+  mountPath: /var/cribl-shared-pq
+  # One of existingClaim / claim / volume:
+  # existingClaim: cribl-shared-pq
+  claim:
+    storageClassName: efs-sc
+    size: 20Gi
+  # volume:
+  #   nfs:
+  #     server: nfs.example.com
+  #     path: /exports/cribl-pq
+```
+
+When `enabled`, the chart:
+
+* Mounts the configured volume at `mountPath` on the leader pod.
+* Exports `CRIBL_WORKER_VOLUME=<mountPath>` on the leader container.
+* Renders a `PersistentVolumeClaim` named `<release>-shared-pq` if you provide `claim` (size and an RWX-capable `storageClassName`). The same name is what each worker-group release should use as `sharedStorage.existingClaim`.
+* Optionally mounts a second "legacy" volume and exports `CRIBL_LEGACY_WORKER_VOLUME` when `sharedStorage.legacy.enabled` is `true`, which lets PQ revival drain queues from a previous shared-storage backend during a migration.
+
+The Cribl-side configuration (`type: nfs`, `mountPoint`, `maxFileSize`, etc.) lives in `local/cribl/pqstorage.yml` and is managed via the Cribl Stream UI/API; the chart only provides the volume and the env var. The default `pqstorage.yml` uses `mountPoint: $CRIBL_WORKER_VOLUME/worker`, so the chart's `mountPath` should point at the directory that contains (or will contain) the `worker/` subdirectory.
+
 # Caveats/Known Issues
 
 * [EKS-Specific Issues](../../common_docs/EKS_SPECIFICS.md).

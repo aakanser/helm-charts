@@ -6,10 +6,10 @@
 replicaCount: 1
 
 criblImage:
-  repository: cribl/cribl
+  repository: public.ecr.aws/t3p9i4u9/cribl
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: 4.17.1
+  tag: 4.18.0-TC404404
   wolfiImage: false
 
 imagePullSecrets: []
@@ -61,6 +61,63 @@ envValueFrom:
       resourceFieldRef:
         resource: limits.cpu
         divisor: 1m
+
+# PQ Shared Storage
+#
+# When enabled, the chart mounts a single shared (ReadWriteMany) volume into
+# the leader pod at `mountPath` and exports `CRIBL_WORKER_VOLUME` so Cribl
+# Stream's PQ shared-storage feature can find it. Mount the SAME backend at
+# the SAME `mountPath` on every `logstream-workergroup` release that
+# participates: each worker writes only to its own subtree (keyed by the
+# worker node GUID), while the leader scans/cleans/revives every worker's
+# subtree.
+#
+# The Cribl Stream side of the configuration (selecting NFS storage and the
+# `mountPoint`) lives in `local/cribl/pqstorage.yml` and is managed via the
+# Cribl Stream UI/API, not the chart. The default `pqstorage.yml` is:
+#
+#   type: nfs
+#   mountPoint: $CRIBL_WORKER_VOLUME/worker
+#
+# so the chart's `mountPath` must point at the directory whose `worker/`
+# subdirectory will hold the `<nodeGuid>/state/queues/...` tree.
+#
+# The volume must be `ReadWriteMany`-capable (e.g. NFS, EFS, Azure Files,
+# Filestore, NFS-CSI). Set exactly one of `existingClaim`, `claim`, or
+# `volume` when `enabled` is true.
+sharedStorage:
+  enabled: true
+  # Path inside the container where the shared volume is mounted. This value
+  # is also exported as the `CRIBL_WORKER_VOLUME` env var.
+  mountPath: /var/cribl-shared-pq
+  # Optional subPath into the volume for the mount.
+  subPath: ""
+  # Reference a pre-existing ReadWriteMany PVC.
+  existingClaim: "cribl-shared-pq"
+  # Render a PVC alongside this chart. Requires a ReadWriteMany-capable
+  # StorageClass. The rendered PVC's name (`<release>-shared-pq`) is also a
+  # convenient value to pass to each worker-group release as
+  # `sharedStorage.existingClaim`.
+  claim: {}
+  #   storageClassName: efs-sc
+  #   accessModes: ["ReadWriteMany"]
+  #   size: 20Gi
+  #   annotations: {}
+  # Raw volume spec; merged into the pod `volumes` entry as-is.
+  volume: {}
+  #   nfs:
+  #     server: nfs.example.com
+  #     path: /exports/cribl-pq
+  # Secondary "legacy" volume used to drain queues from a previous shared
+  # storage backend during a migration. When enabled, the chart additionally
+  # mounts this volume and exports `CRIBL_LEGACY_WORKER_VOLUME`.
+  legacy:
+    enabled: false
+    mountPath: /var/cribl-shared-pq-legacy
+    subPath: ""
+    existingClaim: ""
+    claim: {}
+    volume: {}
 
 persistence:
   # -- Disable this to use an emptyDir for CRIBL_VOLUME_DIR config storage
